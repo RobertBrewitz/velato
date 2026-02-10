@@ -141,57 +141,45 @@ pub fn conv_layer(
 ) -> Option<(Layer, usize, Option<BlendMode>, Option<usize>)> {
     let mut layer = Layer::default();
 
+    let hidden = is_layer_hidden(source);
+
     let params = match source {
         schema::layers::AnyLayer::Null(null_layer) => {
-            if let Some(true) = null_layer.visual_layer.layer.hidden {
-                return None;
-            }
-
             setup_layer_base(&null_layer.visual_layer, &mut layer)
         }
         schema::layers::AnyLayer::Precomposition(precomp_layer) => {
-            if let Some(true) = precomp_layer.visual_layer.layer.hidden {
-                return None;
-            }
-
             let params = setup_precomp_layer(precomp_layer, &mut layer);
-            let name = precomp_layer.ref_id.clone();
-            let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
-            layer.content = Content::Instance { name, time_remap };
-
+            if !hidden {
+                let name = precomp_layer.ref_id.clone();
+                let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
+                layer.content = Content::Instance { name, time_remap };
+            }
             params
         }
         schema::layers::AnyLayer::Shape(shape_layer) => {
-            if let Some(true) = shape_layer.visual_layer.layer.hidden {
-                return None;
-            }
-
             let params = setup_shape_layer(shape_layer, &mut layer);
-            let mut shapes = vec![];
-            for shape in &shape_layer.shapes {
-                if let Some(shape) = conv_shape(shape) {
-                    shapes.push(shape);
+            if !hidden {
+                let mut shapes = vec![];
+                for shape in &shape_layer.shapes {
+                    if let Some(shape) = conv_shape(shape) {
+                        shapes.push(shape);
+                    }
                 }
+                layer.content = Content::Shape(shapes);
             }
-            layer.content = Content::Shape(shapes);
-
             params
         }
         schema::layers::AnyLayer::Solid(solid_color_layer) => {
-            if let Some(true) = solid_color_layer.visual_layer.layer.hidden {
-                return None;
-            }
-
             setup_layer_base(&solid_color_layer.visual_layer, &mut layer)
         }
         schema::layers::AnyLayer::Image(image_layer) => {
-            if let Some(true) = image_layer.visual_layer.layer.hidden {
-                return None;
-            }
-
             setup_layer_base(&image_layer.visual_layer, &mut layer)
         }
     };
+
+    if hidden {
+        layer.is_mask = false;
+    }
 
     let LayerSetupParams {
         layer_index: id,
@@ -200,6 +188,17 @@ pub fn conv_layer(
     } = params;
 
     Some((layer, id, matte_mode, matte_layer_index))
+}
+
+fn is_layer_hidden(source: &schema::layers::AnyLayer) -> bool {
+    let hidden = match source {
+        schema::layers::AnyLayer::Null(l) => l.visual_layer.layer.hidden,
+        schema::layers::AnyLayer::Precomposition(l) => l.visual_layer.layer.hidden,
+        schema::layers::AnyLayer::Shape(l) => l.visual_layer.layer.hidden,
+        schema::layers::AnyLayer::Solid(l) => l.visual_layer.layer.hidden,
+        schema::layers::AnyLayer::Image(l) => l.visual_layer.layer.hidden,
+    };
+    hidden == Some(true)
 }
 
 pub fn conv_transform(
@@ -641,9 +640,132 @@ fn conv_geometry(value: &schema::shapes::AnyShape) -> Option<crate::runtime::mod
             Some(crate::runtime::model::Geometry::Rect(rect))
         }
         AnyShape::Path(value) => conv_shape_geometry(&value.shape_property),
-        // todo: generic shape
+        AnyShape::PolyStar(value) => conv_polystar_geometry(value),
         _ => None,
     }
+}
+
+fn conv_polystar_geometry(
+    value: &schema::shapes::polystar::PolyStarShape,
+) -> Option<runtime::model::Geometry> {
+    use kurbo::PathEl;
+    use schema::constants::star_type::StarType;
+    use std::f64::consts::{FRAC_PI_2, TAU};
+
+    let center = match conv_pos_point(&value.position) {
+        Value::Fixed(p) => p,
+        _ => return None, // animated PolyStar not yet supported
+    };
+    let num_points = match conv_scalar(&value.points) {
+        Value::Fixed(n) => n as usize,
+        _ => return None,
+    };
+    let rotation_deg = match conv_scalar(&value.rotation) {
+        Value::Fixed(r) => r,
+        _ => return None,
+    };
+    let outer_radius = match conv_scalar(&value.outer_radius) {
+        Value::Fixed(r) => r,
+        _ => return None,
+    };
+    let outer_roundness = match conv_scalar(&value.outer_roundness) {
+        Value::Fixed(r) => r / 100.0,
+        _ => return None,
+    };
+
+    let is_star = matches!(value.star_type, StarType::Star);
+    let (inner_radius, inner_roundness) = if is_star {
+        let ir = match value.inner_radius.as_ref().map(conv_scalar) {
+            Some(Value::Fixed(r)) => r,
+            _ => outer_radius,
+        };
+        let is = match value.inner_roundness.as_ref().map(conv_scalar) {
+            Some(Value::Fixed(r)) => r / 100.0,
+            _ => 0.0,
+        };
+        (ir, is)
+    } else {
+        (outer_radius, 0.0)
+    };
+
+    if num_points == 0 {
+        return None;
+    }
+
+    let angle_per_point = TAU / num_points as f64;
+    let half_angle = angle_per_point / 2.0;
+    let rotation_rad = rotation_deg.to_radians() - FRAC_PI_2;
+
+    let total_vertices = if is_star { num_points * 2 } else { num_points };
+    let vertex_angle_step = if is_star { half_angle } else { angle_per_point };
+
+    // Build vertices with tangent control points
+    let mut vertices: Vec<(Point, Point, Point)> = Vec::with_capacity(total_vertices);
+    let mut current_angle = rotation_rad;
+
+    for i in 0..total_vertices {
+        let (radius, roundness) = if !is_star || i % 2 == 0 {
+            (outer_radius, outer_roundness)
+        } else {
+            (inner_radius, inner_roundness)
+        };
+
+        let x = center.x + radius * current_angle.cos();
+        let y = center.y + radius * current_angle.sin();
+
+        let (in_pt, out_pt) = if roundness.abs() > 1e-6 {
+            let tangent_len = radius * (vertex_angle_step / 2.0).tan() * roundness * 4.0 / 3.0;
+            let perp_x = -current_angle.sin();
+            let perp_y = current_angle.cos();
+            (
+                Point::new(x - tangent_len * perp_x, y - tangent_len * perp_y),
+                Point::new(x + tangent_len * perp_x, y + tangent_len * perp_y),
+            )
+        } else {
+            (Point::new(x, y), Point::new(x, y))
+        };
+
+        vertices.push((Point::new(x, y), in_pt, out_pt));
+        current_angle += vertex_angle_step;
+    }
+
+    // Convert to path elements
+    let mut path = Vec::with_capacity(total_vertices * 3 + 2);
+    if vertices.is_empty() {
+        return None;
+    }
+
+    path.push(PathEl::MoveTo(vertices[0].0));
+    for i in 1..vertices.len() {
+        let prev_out = vertices[i - 1].2;
+        let curr_in = vertices[i].1;
+        let curr_pt = vertices[i].0;
+        let prev_pt = vertices[i - 1].0;
+        if (prev_out.x - prev_pt.x).abs() < 1e-6
+            && (prev_out.y - prev_pt.y).abs() < 1e-6
+            && (curr_in.x - curr_pt.x).abs() < 1e-6
+            && (curr_in.y - curr_pt.y).abs() < 1e-6
+        {
+            path.push(PathEl::LineTo(curr_pt));
+        } else {
+            path.push(PathEl::CurveTo(prev_out, curr_in, curr_pt));
+        }
+    }
+    // Close path: last vertex → first vertex
+    let last = vertices.last().unwrap();
+    let first = &vertices[0];
+    if (last.2.x - last.0.x).abs() < 1e-6
+        && (last.2.y - last.0.y).abs() < 1e-6
+        && (first.1.x - first.0.x).abs() < 1e-6
+        && (first.1.y - first.0.y).abs() < 1e-6
+    {
+        path.push(PathEl::ClosePath);
+    } else {
+        path.push(PathEl::CurveTo(last.2, first.1, first.0));
+        path.push(PathEl::ClosePath);
+    }
+
+    Some(runtime::model::Geometry::Fixed(path))
 }
 
 pub fn conv_shape_geometry(
@@ -948,4 +1070,117 @@ pub fn normalize_to_range(a: f64, b: f64, x: f64) -> f64 {
 
     // Calculate the normalized value
     (x - a) / (b - a)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        import::converters::conv_layer,
+        model::Content,
+        schema::{
+            animated_properties::{
+                animated_property::{AnimatedProperty, AnimatedPropertyK},
+                position::{Position, PositionValueK},
+                value::FloatValue,
+            },
+            helpers::{
+                int_boolean::BoolInt,
+                transform::{AnyTransformP, AnyTransformR, Transform},
+                visual_object::VisualObject,
+            },
+            layers::{AnyLayer, layer::Layer, shape::ShapeLayer, visual::VisualLayer},
+        },
+    };
+
+    #[expect(deprecated, reason = "Uses deprecated VisualLayer fields")]
+    fn make_shape_layer(hidden: bool, matte_target: bool) -> AnyLayer {
+        AnyLayer::Shape(ShapeLayer {
+            visual_layer: VisualLayer {
+                layer: Layer {
+                    visual_object: VisualObject {
+                        name: Some("test".to_string()),
+                        match_name: None,
+                    },
+                    layer_type: 4,
+                    three_dimensional: None,
+                    index: Some(0),
+                    start_time: Some(0.0),
+                    in_point: 0.0,
+                    out_point: 60.0,
+                    hidden: if hidden { Some(true) } else { None },
+                    parent_index: None,
+                    time_stretch: None,
+                },
+                transform: Transform {
+                    anchor_point: None,
+                    position: AnyTransformP::Position(Position {
+                        property_index: None,
+                        animated: Some(BoolInt::False),
+                        expression: None,
+                        length: None,
+                        value: PositionValueK::Static(vec![0.0, 0.0]),
+                    }),
+                    scale: None,
+                    rotation: Some(AnyTransformR::Rotation(FloatValue {
+                        animated_property: AnimatedProperty {
+                            animated: Some(BoolInt::False),
+                            property_index: None,
+                            expression: None,
+                            slot_id: None,
+                            value: AnimatedPropertyK::Static(0.0),
+                        },
+                    })),
+                    opacity: None,
+                    skew: None,
+                    skew_axis: None,
+                },
+                matte_mode: None,
+                matte_target: if matte_target {
+                    Some(BoolInt::True)
+                } else {
+                    None
+                },
+                masks_properties: None,
+                rotate_to_match_anim_pos_path: None,
+                matte_layer_index: None,
+                has_mask: None,
+                motion_blur: None,
+                blend_mode: None,
+                css_class: None,
+                id: None,
+                tag_name: None,
+                tranform_before_mask_deprecated: None,
+                transform_before_mask: None,
+            },
+            shapes: vec![],
+        })
+    }
+
+    #[test]
+    fn hidden_layer_has_no_content() {
+        let source = make_shape_layer(true, false);
+        let (layer, ..) = conv_layer(&source).unwrap();
+        assert!(matches!(layer.content, Content::None));
+    }
+
+    #[test]
+    fn hidden_matte_layer_has_is_mask_false() {
+        let source = make_shape_layer(true, true);
+        let (layer, ..) = conv_layer(&source).unwrap();
+        assert!(!layer.is_mask);
+    }
+
+    #[test]
+    fn visible_matte_layer_has_is_mask_true() {
+        let source = make_shape_layer(false, true);
+        let (layer, ..) = conv_layer(&source).unwrap();
+        assert!(layer.is_mask);
+    }
+
+    #[test]
+    fn visible_layer_has_content() {
+        let source = make_shape_layer(false, false);
+        let (layer, ..) = conv_layer(&source).unwrap();
+        assert!(matches!(layer.content, Content::Shape(_)));
+    }
 }

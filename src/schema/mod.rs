@@ -60,6 +60,8 @@ mod tests {
         height: 512,
         three_dimensional: Some(BoolInt::False),
         assets: None,
+        markers: None,
+        meta: None,
     });
 
     #[test]

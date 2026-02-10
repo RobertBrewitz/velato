@@ -12,6 +12,18 @@ Subheadings to categorize changes are `added, changed, deprecated, removed, fixe
 
 This release has an [MSRV][] of 1.88.
 
+### Added
+
+- Added `begin_layer_group`/`end_layer_group` hooks to `RenderSink` for per-layer rendering callbacks.
+- Added PolyStar shape support (star and polygon geometry).
+- Added `markers` and `meta` fields to the Animation schema.
+
+### Fixed
+
+- Fixed precomp `start_time` reading by working around serde field shadowing of the `"st"` key.
+- Fixed hidden layers breaking parent transform chains; hidden layers now remain in the layer set with their transforms intact but render no content.
+- Fixed `with_winit` example failing to start due to `wgpu` version mismatch (v26 vs v27) left behind during the Vello 0.7 upgrade.
+
 ## [0.9.0]
 
 This release has an [MSRV][] of 1.88.

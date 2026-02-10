@@ -50,12 +50,18 @@ pub struct Animation {
     /// List of assets that can be referenced by layers
     #[serde(skip_serializing_if = "Option::is_none")]
     pub assets: Option<Vec<AnyAsset>>,
+    /// Markers (named time spans)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markers: Option<serde_json::Value>,
+    /// File metadata from the authoring tool
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
     // TODO: comps
     // TODO: fonts
     // TODO: chars
-    // TODO: meta
     // TODO: metadata
-    // TODO: markers
     // TODO: mb
     // TODO: slots
 }
