@@ -147,6 +147,34 @@ pub fn conv_animation(source: schema::Animation) -> Composition {
     //     target.layers = layers;
     // =======
     target.layers = process_layers(&source.composition.layers, &mut idmap);
+
+    if let Some(entries) = source
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.pointer("/customProps/engine/emission"))
+        .and_then(serde_json::Value::as_array)
+    {
+        for entry in entries {
+            let Some(name) = entry.get("layer").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            let Some(intensity) = entry.get("intensity").and_then(serde_json::Value::as_f64) else {
+                continue;
+            };
+            if !intensity.is_finite() || !(0.0..=65504.0).contains(&intensity) {
+                continue;
+            }
+            let layers = match entry.get("asset") {
+                None => Some(&mut target.layers),
+                Some(asset) => asset.as_str().and_then(|id| target.assets.get_mut(id)),
+            };
+            if let Some(layers) = layers {
+                for layer in layers.iter_mut().filter(|layer| layer.name == name) {
+                    layer.emission = Some(intensity as f32);
+                }
+            }
+        }
+    }
     // >>>>>>> main
 
     target

@@ -240,6 +240,8 @@ pub struct GroupTransform {
 /// Layer in an animation.
 #[derive(Clone, Debug, Default)]
 pub struct Layer {
+    /// Engine extension: linear-light brightness, inherited when absent.
+    pub emission: Option<f32>,
     /// Name of the layer.
     pub name: String,
     /// Index of the transform parent layer.

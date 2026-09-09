@@ -43,6 +43,9 @@ pub trait RenderSink {
     /// - `index` is the layer's position in the layer array.
     fn begin_layer_group(&mut self, _name: &str, _index: usize) {}
 
+    /// Optional engine emission override for the current layer group.
+    fn set_layer_emission(&mut self, _emission: f32) {}
+
     /// Called after rendering a Lottie layer.
     fn end_layer_group(&mut self) {}
 }
@@ -112,6 +115,9 @@ impl Renderer {
             return;
         }
         scene.begin_layer_group(&layer.name, layer_index);
+        if let Some(emission) = layer.emission {
+            scene.set_layer_emission(emission);
+        }
         let parent_transform = transform;
         let transform = self.compute_transform(layer_set, layer, parent_transform, frame);
         let full_rect = Rect::new(0.0, 0.0, animation.width as f64, animation.height as f64);
