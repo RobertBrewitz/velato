@@ -201,6 +201,33 @@ pub fn conv_layer(
 
     if hidden {
         layer.is_mask = false;
+    } else {
+        let visual = match source {
+            schema::layers::AnyLayer::Null(l) => &l.visual_layer,
+            schema::layers::AnyLayer::Precomposition(l) => &l.visual_layer,
+            schema::layers::AnyLayer::Shape(l) => &l.visual_layer,
+            schema::layers::AnyLayer::Solid(l) => &l.visual_layer,
+            schema::layers::AnyLayer::Image(l) => &l.visual_layer,
+        };
+        for effect in visual.effects.iter().flatten() {
+            if effect.get("en").is_some_and(|enabled| {
+                enabled.as_bool() == Some(false) || enabled.as_u64() == Some(0)
+            }) {
+                continue;
+            }
+            if let Some(effect) = conv_layer_effect(effect) {
+                layer.effects.push(effect);
+            } else {
+                layer.unsupported_effects.push(model::UnsupportedEffect {
+                    name: effect
+                        .get("nm")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
+                    effect_type: effect.get("ty").and_then(serde_json::Value::as_u64),
+                });
+            }
+        }
     }
 
     let LayerSetupParams {
@@ -210,6 +237,49 @@ pub fn conv_layer(
     } = params;
 
     Some((layer, id, matte_mode, matte_layer_index))
+}
+
+fn conv_layer_effect(effect: &serde_json::Value) -> Option<model::LayerEffect> {
+    let parameters = effect.get("ef")?.as_array()?;
+    let scalar = |index: usize| {
+        let value = parameters.get(index)?.get("v")?;
+        let value =
+            serde_json::from_value::<schema::animated_properties::value::FloatValue>(value.clone())
+                .ok()?;
+        Some(conv_scalar(&value))
+    };
+    let color = |index: usize| {
+        let value = parameters.get(index)?.get("v")?;
+        let value = serde_json::from_value::<schema::animated_properties::color_value::ColorValue>(
+            value.clone(),
+        )
+        .ok()?;
+        Some(conv_color(&value))
+    };
+    Some(match effect.get("ty")?.as_u64()? {
+        29 => model::LayerEffect::GaussianBlur {
+            blurriness: scalar(0)?,
+            dimensions: scalar(1).unwrap_or(Value::Fixed(1.0)),
+            wrap: scalar(2).unwrap_or(Value::Fixed(0.0)),
+        },
+        25 => model::LayerEffect::DropShadow {
+            color: color(0)?,
+            opacity: scalar(1)?,
+            angle: scalar(2)?,
+            distance: scalar(3)?,
+            softness: scalar(4)?,
+        },
+        21 => model::LayerEffect::Fill {
+            color: color(2)?,
+            opacity: scalar(6)?,
+        },
+        20 => model::LayerEffect::Tint {
+            black: color(0)?,
+            white: color(1)?,
+            amount: scalar(2)?,
+        },
+        _ => return None,
+    })
 }
 
 fn is_layer_hidden(source: &schema::layers::AnyLayer) -> bool {

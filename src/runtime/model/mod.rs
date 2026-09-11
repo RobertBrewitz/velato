@@ -237,9 +237,45 @@ pub struct GroupTransform {
     pub opacity: Value<f64>,
 }
 
+#[derive(Clone, Debug)]
+pub enum LayerEffect {
+    GaussianBlur {
+        blurriness: Value<f64>,
+        dimensions: Value<f64>,
+        wrap: Value<f64>,
+    },
+    DropShadow {
+        color: Value<peniko::Color>,
+        opacity: Value<f64>,
+        angle: Value<f64>,
+        distance: Value<f64>,
+        softness: Value<f64>,
+    },
+    Fill {
+        color: Value<peniko::Color>,
+        opacity: Value<f64>,
+    },
+    Tint {
+        black: Value<peniko::Color>,
+        white: Value<peniko::Color>,
+        amount: Value<f64>,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub struct UnsupportedEffect {
+    pub name: String,
+    pub effect_type: Option<u64>,
+}
+
 /// Layer in an animation.
 #[derive(Clone, Debug, Default)]
 pub struct Layer {
+    pub effects: Vec<LayerEffect>,
+    /// Names and type identifiers of unhandled or malformed effects retained during
+    /// import for caller diagnostics. Does not include effects unsupported only by
+    /// the chosen render sink.
+    pub unsupported_effects: Vec<UnsupportedEffect>,
     /// Name of the layer.
     pub name: String,
     /// Index of the transform parent layer.

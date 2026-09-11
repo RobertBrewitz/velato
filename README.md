@@ -17,7 +17,7 @@ Render with the (optional) built-in [Vello](https://vello.dev) integration, or i
 </div>
 
 > [!WARNING]
-> The goal of this crate is to provide coverage of the large Lottie spec, up to what vello can render, for use in interactive graphics. We are working towards correctness, but there are missing features listed below.
+> Velato aims to provide broad coverage of the Lottie spec for interactive graphics through the renderer-independent `RenderSink` interface. Rendering support depends on both Velato and the chosen sink; individual backends may have additional limitations. We are working towards correctness, but there are missing features listed below.
 
 ## Version compatibility
 
@@ -36,17 +36,18 @@ Render with the (optional) built-in [Vello](https://vello.dev) integration, or i
 
 ## Missing features
 
-Several Lottie features are not yet supported, including:
+Known missing or incomplete features include:
 
-- Position keyframe (`ti`, `to`) easing
+- Position keyframe spatial interpolation (`ti`, `to`)
 - Time remapping (`tm`)
 - Text
-- Image embedding
+- Built-in image loading and decoding, including embedded images (asset metadata is available to callers and sinks)
 - Advanced shapes (stroke dash, zig-zag, etc.)
-- Advanced effects (motion blur, drop shadows, etc.)
-- Correct color stop handling
+- Layer effects other than Gaussian blur, drop shadow, fill, and tint (these require sink support)
+- Layer styles
+- Accurate gradient opacity stops, including stops at positions without a corresponding color stop
 - Split rotations
-- Split positions
+- Split positions in repeater transforms
 
 ## Usage
 

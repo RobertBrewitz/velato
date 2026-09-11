@@ -1,14 +1,13 @@
 // Copyright 2024 the Velato Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-//! Render a Lottie animation to a Vello [`Scene`](crate::vello::Scene).
+//! Parse and render Lottie animations through the renderer-independent [`RenderSink`] interface.
 //!
-//! This currently lacks support for a [number of important](crate#unsupported-features) SVG features.
+//! Use the optional built-in Vello integration or implement [`RenderSink`] for your own renderer.
+//! Rendering support depends on both Velato and the chosen sink; see the
+//! [known limitations](crate#unsupported-features).
 //!
-//! This is also intended to be the preferred integration between Vello and [usvg](https://crates.io/crates/usvg),
-//! so [consider contributing](https://github.com/linebender/vello_svg) if you need a feature which is missing.
-//!
-//! This crate also re-exports [`vello`], so you can easily use the specific version that is compatible with Velato.
+//! With the `vello` feature enabled, this crate re-exports the compatible version of Vello.
 //!
 //! ## Usage
 //!
@@ -20,10 +19,7 @@
 //! let lottie = include_str!("../examples/assets/google_fonts/Tiger.json");
 //! let composition = velato::Composition::from_str(lottie).expect("valid file");
 //!
-//! // Render to a scene
-//! let mut new_scene = vello::Scene::new();
-//!
-//! // Render to a scene!
+//! // Render to a scene (requires the `vello` feature).
 //! let mut renderer = velato::Renderer::new();
 //! let frame = 0.0; // Arbitrary number chosen. Ensure it's a valid frame!
 //! let transform = vello::kurbo::Affine::IDENTITY;
@@ -34,16 +30,18 @@
 //!
 //! # Unsupported features
 //!
-//! Missing features include:
-//! - Position keyframe (`ti`, `to`) easing
+//! Known missing or incomplete features include:
+//! - Position keyframe spatial interpolation (`ti`, `to`)
 //! - Time remapping (`tm`)
 //! - Text
-//! - Image embedding
+//! - Built-in image loading and decoding, including embedded images (asset metadata is available
+//!   to callers and sinks)
 //! - Advanced shapes (stroke dash, zig-zag, etc.)
-//! - Advanced effects (motion blur, drop shadows, etc.)
-//! - Correct color stop handling
+//! - Layer effects other than Gaussian blur, drop shadow, fill, and tint (these require sink support)
+//! - Layer styles
+//! - Accurate gradient opacity stops, including stops at positions without a corresponding color stop
 //! - Split rotations
-//! - Split positions
+//! - Split positions in repeater transforms
 
 // LINEBENDER LINT SET - lib.rs - v4
 // See https://linebender.org/wiki/canonical-lints/
@@ -95,4 +93,6 @@ pub use error::Error;
 #[cfg(feature = "vello")]
 pub use vello;
 
-pub use runtime::{Composition, RenderSink, Renderer, model};
+pub use runtime::{
+    BlurEdgeMode, Composition, FilterEffect, FilterLayerResult, RenderSink, Renderer, model,
+};
