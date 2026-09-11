@@ -276,6 +276,8 @@ pub struct Layer {
     /// import for caller diagnostics. Does not include effects unsupported only by
     /// the chosen render sink.
     pub unsupported_effects: Vec<UnsupportedEffect>,
+    /// Engine extension: linear-light brightness, inherited when absent.
+    pub emission: Option<f32>,
     /// Name of the layer.
     pub name: String,
     /// Index of the transform parent layer.
