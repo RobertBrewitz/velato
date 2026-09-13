@@ -30,6 +30,7 @@ This release has an [MSRV][] of 1.88.
 - Respect trim-path mode for independent and sequential trimming, preserving disconnected contours and accounting for nested shape transforms.
 - Compose consecutive trim-path offsets before wrapping to avoid spurious disconnected segments.
 - Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
+- Reject invalid animation frame rates duriing import ([#121][] by [@RobertBrewitz][])
 
 ## [0.12.0][] (2026-09-09)
 
