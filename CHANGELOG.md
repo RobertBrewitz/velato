@@ -17,6 +17,7 @@ This release has an [MSRV][] of 1.88.
 
 ### Fixed
 
+- Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
 - Fixed omitted layer rotation causing panick during import. ([#122][] by [@RobertBrewitz][])
 
 ## [0.12.0][] (2026-09-09)
@@ -239,6 +240,7 @@ This release has an [MSRV][] of 1.75.
 [#115]: https://github.com/linebender/velato/pull/115
 [#116]: https://github.com/linebender/velato/pull/116
 [#117]: https://github.com/linebender/velato/pull/117
+[#119]: https://github.com/linebender/velato/pull/119
 [#122]: https://github.com/linebender/velato/pull/122
 
 [Unreleased]: https://github.com/linebender/velato/compare/v0.12.0...HEAD
