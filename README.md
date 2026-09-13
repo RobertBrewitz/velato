@@ -38,7 +38,6 @@ Render with the (optional) built-in [Vello](https://vello.dev) integration, or i
 
 Known missing or incomplete features include:
 
-- Time remapping (`tm`)
 - Text
 - Built-in image loading and decoding, including embedded images (asset metadata is available to callers and sinks)
 - Advanced shapes (stroke dash, zig-zag, etc.)

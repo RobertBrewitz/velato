@@ -66,7 +66,17 @@ pub enum Transform {
 }
 impl Transform {
     pub fn is_fixed(&self) -> bool {
-        matches!(self, Self::Fixed(_))
+        match self {
+            Self::Fixed(_) => true,
+            Self::Animated(value) => value.is_fixed(),
+        }
+    }
+    /// Authored components, unavailable for manually constructed matrix-only transforms.
+    pub fn components(&self, frame: f64) -> Option<TransformComponents> {
+        match self {
+            Self::Fixed(_) => None,
+            Self::Animated(value) => Some(value.components(frame)),
+        }
     }
     pub fn evaluate(&self, frame: f64) -> ValueRef<'_, fixed::Transform> {
         match self {
@@ -232,6 +242,38 @@ pub enum Shape {
     Trim(Trim),
 }
 
+/// Evaluated authored transform values. Position is in enclosing-space pixels;
+/// anchor is in content-space pixels. Scale is percent and angles are degrees.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TransformComponents {
+    pub anchor: Point,
+    pub position: Point,
+    pub scale: Vec2,
+    pub rotation: f64,
+    pub skew: f64,
+    pub skew_angle: f64,
+}
+
+impl TransformComponents {
+    /// Builds a column-vector transform in Lottie's Y-down coordinate system.
+    /// Positive authored rotation is clockwise; authored skew uses a negative x-shear.
+    pub fn matrix(self) -> Affine {
+        let skew = if self.skew != 0.0 {
+            let angle = self.skew_angle.to_radians();
+            Affine::rotate(-angle)
+                * Affine::skew((-self.skew.to_radians()).tan(), 0.0)
+                * Affine::rotate(angle)
+        } else {
+            Affine::IDENTITY
+        };
+        Affine::translate(self.position.to_vec2())
+            * Affine::rotate(self.rotation.to_radians())
+            * skew
+            * Affine::scale_non_uniform(self.scale.x / 100.0, self.scale.y / 100.0)
+            * Affine::translate(-self.anchor.to_vec2())
+    }
+}
+
 /// Transform and opacity for a shape group.
 #[derive(Clone, Debug)]
 pub struct GroupTransform {
@@ -275,16 +317,27 @@ pub struct UnsupportedEffect {
     pub effect_type: Option<u64>,
 }
 
+/// A layer reference within a single composition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LayerReference {
+    /// Runtime index in the containing composition's layer array.
+    Resolved(usize),
+    /// Authored Lottie `ind` value for which import found no matching layer.
+    Unresolved(usize),
+}
+
 /// Layer in an animation.
 #[derive(Clone, Debug, Default)]
 pub struct Layer {
     pub effects: Vec<LayerEffect>,
     /// Effects Velato could not import because their type is unsupported or their parameters are invalid.
     pub unsupported_effects: Vec<UnsupportedEffect>,
+    /// Suppresses normal rendering, not reference evaluation.
+    pub hidden: bool,
     /// Name of the layer.
     pub name: String,
-    /// Index of the transform parent layer.
-    pub parent: Option<usize>,
+    /// Transform parent in the same composition. `None` means no authored parent.
+    pub parent: Option<LayerReference>,
     /// Transform for the entire layer.
     pub transform: Transform,
     /// Opacity for the entire layer.
@@ -306,7 +359,7 @@ pub struct Layer {
     /// True if the layer is used as a mask.
     pub is_mask: bool,
     /// Mask blend mode and layer.
-    pub mask_layer: Option<(BlendMode, usize)>,
+    pub mask_layer: Option<(BlendMode, LayerReference)>,
     /// Content of the layer.
     pub content: Content,
 }

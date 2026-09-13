@@ -8,8 +8,8 @@ use super::defaults::{
 use crate::import::builders::LayerSetupParams;
 use crate::runtime::model::animated::{self, Position};
 use crate::runtime::model::{
-    self, Content, Draw, Easing, EasingHandle, GroupTransform, Layer, RepeaterComposite,
-    SpatialKeyframe, SpatialPosition, SplineToPath, Time, Tween, Value,
+    self, Content, Draw, Easing, EasingHandle, GroupTransform, Layer, LayerReference,
+    RepeaterComposite, SpatialKeyframe, SpatialPosition, SplineToPath, Time, Tween, Value,
 };
 use crate::runtime::{self};
 use crate::schema::animated_properties::keyframe_bezier_handle::{
@@ -19,15 +19,13 @@ use crate::schema::animated_properties::multi_dimensional::MultiDimensional;
 use crate::schema::animated_properties::split_vector::SplitVector;
 use crate::schema::constants::gradient_type::GradientType;
 use crate::schema::helpers::int_boolean::BoolInt;
+use crate::schema::layers::AnyLayer;
 use crate::{Composition, schema};
 use kurbo::{Cap, Join, Point, Size, Vec2};
 use peniko::{BlendMode, Color, Mix};
 use std::collections::HashMap;
 
-fn process_layers(
-    source_layers: &[schema::layers::AnyLayer],
-    idmap: &mut HashMap<usize, usize>,
-) -> Vec<Layer> {
+fn process_layers(source_layers: &[AnyLayer], idmap: &mut HashMap<usize, usize>) -> Vec<Layer> {
     idmap.clear();
 
     let mut converted: Vec<(Layer, usize, Option<BlendMode>, Option<usize>)> = vec![];
@@ -49,24 +47,27 @@ fn process_layers(
 
     let mut layers: Vec<Layer> = Vec::with_capacity(converted.len());
     let mut prev_matte_layer: Option<usize> = None;
+    let resolve = |id| {
+        idmap
+            .get(&id)
+            .copied()
+            .map_or(LayerReference::Unresolved(id), LayerReference::Resolved)
+    };
 
     for (idx, (mut layer, _id, matte_mode, explicit_matte_index)) in
         converted.into_iter().enumerate()
     {
-        if let Some(parent) = layer.parent {
-            layer.parent = idmap.get(&parent).copied();
+        if let Some(LayerReference::Unresolved(id)) = layer.parent {
+            layer.parent = Some(resolve(id));
         }
 
         if let Some(matte_mode) = matte_mode {
-            let matte_layer_idx = if let Some(explicit_idx) = explicit_matte_index {
-                idmap.get(&explicit_idx).copied()
+            let matte_reference = if let Some(id) = explicit_matte_index {
+                Some(resolve(id))
             } else {
-                prev_matte_layer
+                prev_matte_layer.map(LayerReference::Resolved)
             };
-
-            if let Some(matte_idx) = matte_layer_idx {
-                layer.mask_layer = Some((matte_mode, matte_idx));
-            }
+            layer.mask_layer = matte_reference.map(|reference| (matte_mode, reference));
         }
 
         if layer.is_mask {
@@ -151,81 +152,68 @@ pub fn conv_animation(source: schema::Animation) -> Composition {
     target
 }
 
-pub fn conv_layer(
-    source: &schema::layers::AnyLayer,
-) -> Option<(Layer, usize, Option<BlendMode>, Option<usize>)> {
+pub fn conv_layer(source: &AnyLayer) -> Option<(Layer, usize, Option<BlendMode>, Option<usize>)> {
     let mut layer = Layer::default();
 
-    let hidden = is_layer_hidden(source);
+    layer.hidden = is_layer_hidden(source);
 
     let params = match source {
-        schema::layers::AnyLayer::Null(null_layer) => {
-            setup_layer_base(&null_layer.visual_layer, &mut layer)
-        }
-        schema::layers::AnyLayer::Precomposition(precomp_layer) => {
+        AnyLayer::Null(null_layer) => setup_layer_base(&null_layer.visual_layer, &mut layer),
+        AnyLayer::Precomposition(precomp_layer) => {
             let params = setup_precomp_layer(precomp_layer, &mut layer);
-            if !hidden {
-                let name = precomp_layer.ref_id.clone();
-                let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
-                layer.content = Content::Instance { name, time_remap };
-            }
+            let name = precomp_layer.ref_id.clone();
+            let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
+            layer.content = Content::Instance { name, time_remap };
             params
         }
-        schema::layers::AnyLayer::Shape(shape_layer) => {
+        AnyLayer::Shape(shape_layer) => {
             let params = setup_shape_layer(shape_layer, &mut layer);
-            if !hidden {
-                let mut shapes = vec![];
-                for shape in &shape_layer.shapes {
-                    if let Some(shape) = conv_shape(shape) {
-                        shapes.push(shape);
-                    }
+            let mut shapes = vec![];
+            for shape in &shape_layer.shapes {
+                if let Some(shape) = conv_shape(shape) {
+                    shapes.push(shape);
                 }
-                layer.content = Content::Shape(shapes);
             }
+            layer.content = Content::Shape(shapes);
             params
         }
-        schema::layers::AnyLayer::Solid(solid_color_layer) => {
+        AnyLayer::Solid(solid_color_layer) => {
             setup_layer_base(&solid_color_layer.visual_layer, &mut layer)
         }
-        schema::layers::AnyLayer::Image(image_layer) => {
+        AnyLayer::Image(image_layer) => {
             let params = setup_layer_base(&image_layer.visual_layer, &mut layer);
-            if !hidden {
-                layer.content = Content::Image {
-                    asset_id: image_layer.ref_id.clone(),
-                };
-            }
+            layer.content = Content::Image {
+                asset_id: image_layer.ref_id.clone(),
+            };
             params
         }
     };
 
-    if hidden {
-        layer.is_mask = false;
-    } else {
-        let visual = match source {
-            schema::layers::AnyLayer::Null(l) => &l.visual_layer,
-            schema::layers::AnyLayer::Precomposition(l) => &l.visual_layer,
-            schema::layers::AnyLayer::Shape(l) => &l.visual_layer,
-            schema::layers::AnyLayer::Solid(l) => &l.visual_layer,
-            schema::layers::AnyLayer::Image(l) => &l.visual_layer,
-        };
-        for effect in visual.effects.iter().flatten() {
-            if effect.get("en").is_some_and(|enabled| {
-                enabled.as_bool() == Some(false) || enabled.as_u64() == Some(0)
-            }) {
-                continue;
-            }
-            if let Some(effect) = conv_layer_effect(effect) {
-                layer.effects.push(effect);
-            } else {
-                layer.unsupported_effects.push(model::UnsupportedEffect {
-                    name: effect
-                        .get("nm")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    effect_type: effect.get("ty").and_then(serde_json::Value::as_u64),
-                });
-            }
+    let visual = match source {
+        AnyLayer::Null(l) => &l.visual_layer,
+        AnyLayer::Precomposition(l) => &l.visual_layer,
+        AnyLayer::Shape(l) => &l.visual_layer,
+        AnyLayer::Solid(l) => &l.visual_layer,
+        AnyLayer::Image(l) => &l.visual_layer,
+    };
+    for effect in visual.effects.iter().flatten() {
+        if effect
+            .get("en")
+            .is_some_and(|enabled| enabled.as_bool() == Some(false) || enabled.as_u64() == Some(0))
+        {
+            continue;
+        }
+        if let Some(effect) = conv_layer_effect(effect) {
+            layer.effects.push(effect);
+        } else {
+            layer.unsupported_effects.push(model::UnsupportedEffect {
+                name: effect
+                    .get("nm")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                effect_type: effect.get("ty").and_then(serde_json::Value::as_u64),
+            });
         }
     }
 
@@ -281,13 +269,13 @@ fn conv_layer_effect(effect: &serde_json::Value) -> Option<model::LayerEffect> {
     })
 }
 
-fn is_layer_hidden(source: &schema::layers::AnyLayer) -> bool {
+fn is_layer_hidden(source: &AnyLayer) -> bool {
     let hidden = match source {
-        schema::layers::AnyLayer::Null(l) => l.visual_layer.layer.hidden,
-        schema::layers::AnyLayer::Precomposition(l) => l.visual_layer.layer.hidden,
-        schema::layers::AnyLayer::Shape(l) => l.visual_layer.layer.hidden,
-        schema::layers::AnyLayer::Solid(l) => l.visual_layer.layer.hidden,
-        schema::layers::AnyLayer::Image(l) => l.visual_layer.layer.hidden,
+        AnyLayer::Null(l) => l.visual_layer.layer.hidden,
+        AnyLayer::Precomposition(l) => l.visual_layer.layer.hidden,
+        AnyLayer::Shape(l) => l.visual_layer.layer.hidden,
+        AnyLayer::Solid(l) => l.visual_layer.layer.hidden,
+        AnyLayer::Image(l) => l.visual_layer.layer.hidden,
     };
     hidden == Some(true)
 }
@@ -301,7 +289,7 @@ pub fn conv_transform(
             // todo: need to actually handle split rotations
             schema::helpers::transform::AnyTransformR::SplitRotation { .. } => todo!(),
         },
-        None => todo!("split rotation"),
+        None => &FLOAT_VALUE_ZERO,
     };
 
     let position = match &value.position {
@@ -1251,17 +1239,19 @@ mod tests {
     }
 
     #[test]
-    fn hidden_layer_has_no_content() {
+    fn hidden_layer_retains_content() {
         let source = make_shape_layer(true, false);
         let (layer, ..) = conv_layer(&source).unwrap();
-        assert!(matches!(layer.content, Content::None));
+        assert!(layer.hidden);
+        assert!(matches!(layer.content, Content::Shape(_)));
     }
 
     #[test]
-    fn hidden_matte_layer_has_is_mask_false() {
+    fn hidden_matte_layer_retains_is_mask() {
         let source = make_shape_layer(true, true);
         let (layer, ..) = conv_layer(&source).unwrap();
-        assert!(!layer.is_mask);
+        assert!(layer.hidden);
+        assert!(layer.is_mask);
     }
 
     #[test]

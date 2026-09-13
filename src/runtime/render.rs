@@ -1,8 +1,9 @@
 // Copyright 2024 the Velato Authors
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
+use super::evaluate::{EvaluatedLayer, EvaluationError};
 use super::model::{
-    Content, Draw, Geometry, GroupTransform, ImageAsset, Layer, RepeaterComposite, Shape, fixed,
+    Content, Draw, Geometry, GroupTransform, ImageAsset, RepeaterComposite, Shape, fixed,
 };
 use super::{Composition, FilterEffect, FilterLayerResult};
 use kurbo::{
@@ -66,6 +67,8 @@ impl Renderer {
 
     /// Renders and appends the animation at a given frame to the provided scene.
     ///
+    /// Panics on hierarchy evaluation errors. Use [`Self::try_append`] to handle them.
+    ///
     /// Repeater expansion is unbounded. Callers handling untrusted animations should validate copy
     /// counts and nesting, and benchmark representative workloads to establish their own limits.
     pub fn append(
@@ -76,76 +79,85 @@ impl Renderer {
         alpha: f64,
         scene: &mut impl RenderSink,
     ) {
+        self.try_append(animation, frame, transform, alpha, scene)
+            .expect("Lottie hierarchy evaluation failed");
+    }
+
+    /// Evaluates before touching the sink, returning hierarchy errors explicitly.
+    /// Reevaluates the composition; does not consume an existing query snapshot.
+    pub fn try_append(
+        &mut self,
+        animation: &Composition,
+        frame: f64,
+        transform: Affine,
+        alpha: f64,
+        scene: &mut impl RenderSink,
+    ) -> Result<(), EvaluationError> {
+        let evaluated = animation.evaluate(frame)?;
         self.batch.clear();
         let clip = Rect::new(0.0, 0.0, animation.width as _, animation.height as _);
         let clip_bounds = transform.transform_rect_bbox(clip);
         scene.push_clip_layer(transform, &clip);
-        for (layer_index, layer) in animation.layers.iter().enumerate().rev() {
-            if layer.is_mask {
+        for (layer_index, layer) in evaluated.layers.iter().enumerate().rev() {
+            if !layer.visible {
                 continue;
             }
             self.render_layer(
                 animation,
-                &animation.layers,
+                &evaluated.layers,
                 layer,
                 layer_index,
                 transform,
                 alpha,
-                frame,
                 &clip_bounds,
                 scene,
             );
         }
         scene.pop_layer();
+        Ok(())
     }
 
     #[expect(clippy::too_many_arguments, reason = "Deferred")]
     fn render_layer(
         &mut self,
         animation: &Composition,
-        layer_set: &[Layer],
-        layer: &Layer,
+        layer_set: &[EvaluatedLayer<'_>],
+        evaluated: &EvaluatedLayer<'_>,
         layer_index: usize,
-        transform: Affine,
+        output_transform: Affine,
         alpha: f64,
-        frame: f64,
         clip_bounds: &Rect,
         scene: &mut impl RenderSink,
     ) {
-        if !layer.frames.contains(&frame) {
+        if !evaluated.in_range {
             return;
         }
+        let layer = evaluated.layer;
+        let frame = evaluated.property_frame;
         scene.begin_layer_group(&layer.name, layer_index);
-        let parent_transform = transform;
-        let transform = self.compute_transform(layer_set, layer, parent_transform, frame);
+        let layer_transform = output_transform * evaluated.full_transform;
         let full_rect = Rect::new(0.0, 0.0, animation.width as f64, animation.height as f64);
-        if let Some((mode, mask_index)) = layer.mask_layer {
-            // todo: re-enable masking when it is more understood (and/or if
-            // it's currently supported in vello?) Extra layer to
-            // isolate blending for the mask
-            scene.push_layer(Mix::Normal, 1.0, parent_transform, &full_rect);
-            if let Some(mask) = layer_set.get(mask_index) {
-                self.render_layer(
-                    animation,
-                    layer_set,
-                    mask,
-                    0,
-                    parent_transform,
-                    alpha,
-                    frame,
-                    clip_bounds,
-                    scene,
-                );
-            }
-            scene.push_layer(mode, 1.0, parent_transform, &full_rect);
+        if let Some((mode, mask_index)) = evaluated.matte {
+            scene.push_layer(Mix::Normal, 1.0, output_transform, &full_rect);
+            self.render_layer(
+                animation,
+                layer_set,
+                &layer_set[mask_index],
+                mask_index,
+                output_transform,
+                alpha,
+                clip_bounds,
+                scene,
+            );
+            scene.push_layer(mode, 1.0, output_transform, &full_rect);
         }
-        let alpha = alpha * layer.opacity.evaluate(frame) / 100.0;
+        let alpha = alpha * evaluated.opacity;
 
-        // IMPORTANT: wrap effects in an outer opacity layer
+        // Isolate opacity so it applies to the combined effect output.
         let isolate_opacity = !layer.effects.is_empty() && alpha != 1.0;
 
         if isolate_opacity {
-            scene.push_layer(Mix::Normal, alpha as f32, parent_transform, &full_rect);
+            scene.push_layer(Mix::Normal, alpha as f32, output_transform, &full_rect);
         }
 
         let alpha = if isolate_opacity { 1.0 } else { alpha };
@@ -157,7 +169,7 @@ impl Renderer {
             .rev()
             .filter_map(|effect| effect.evaluate(frame))
         {
-            match scene.push_filter(transform, &effect) {
+            match scene.push_filter(layer_transform, &effect) {
                 FilterLayerResult::Pushed => filter_layers += 1,
                 FilterLayerResult::Unsupported => {}
             }
@@ -165,39 +177,26 @@ impl Renderer {
 
         for mask in &layer.masks {
             mask.geometry.evaluate(frame, &mut self.mask_elements);
-            scene.push_clip_layer(transform, &self.mask_elements.as_slice());
+            scene.push_clip_layer(layer_transform, &self.mask_elements.as_slice());
             self.mask_elements.clear();
         }
         match &layer.content {
             Content::None => {}
-            Content::Instance {
-                name,
-                time_remap: _,
-            } => {
-                // TODO: Use time_remap
-                // let frame = time_remap
-                //     .as_ref()
-                //     .map(|tm| tm.evaluate(frame))
-                //     .unwrap_or(frame);
-                if let Some(asset_layers) = animation.assets.get(name) {
-                    let frame = frame / layer.stretch;
-                    let frame_delta = -layer.start_frame / layer.stretch;
-                    for asset_layer in asset_layers.iter().rev() {
-                        if asset_layer.is_mask {
-                            continue;
-                        }
-                        self.render_layer(
-                            animation,
-                            asset_layers,
-                            asset_layer,
-                            0,
-                            transform,
-                            alpha,
-                            frame + frame_delta,
-                            clip_bounds,
-                            scene,
-                        );
+            Content::Instance { .. } => {
+                for (index, child) in evaluated.children.iter().enumerate().rev() {
+                    if child.layer.is_mask || child.layer.hidden {
+                        continue;
                     }
+                    self.render_layer(
+                        animation,
+                        &evaluated.children,
+                        child,
+                        index,
+                        output_transform,
+                        alpha,
+                        clip_bounds,
+                        scene,
+                    );
                 }
             }
             Content::Image { asset_id } => {
@@ -208,21 +207,21 @@ impl Renderer {
                         .zip(image.height)
                         .filter(|(w, h)| *w > 0.0 && *h > 0.0);
                     if let Some((width, height)) = bounds {
-                        scene.push_clip_layer(transform, &Rect::new(0.0, 0.0, width, height));
+                        scene.push_clip_layer(layer_transform, &Rect::new(0.0, 0.0, width, height));
                     }
-                    scene.draw_image(image, transform, alpha);
+                    scene.draw_image(image, layer_transform, alpha);
                     if bounds.is_some() {
                         scene.pop_layer();
                     }
                 }
             }
             Content::Shape(shapes) => {
-                self.render_shapes(shapes, transform, alpha, frame);
+                self.render_shapes(shapes, layer_transform, alpha, frame);
                 self.batch.render(scene, clip_bounds);
                 self.batch.clear();
             }
         }
-        for _ in 0..layer.masks.len() + filter_layers + (layer.mask_layer.is_some() as usize * 2) {
+        for _ in 0..layer.masks.len() + filter_layers + (evaluated.matte.is_some() as usize * 2) {
             scene.pop_layer();
         }
         scene.end_layer_group();
@@ -275,36 +274,6 @@ impl Renderer {
             draw.transform = transform * draw.transform;
         }
         self.batch.drawn_geometry = self.batch.geometries.len();
-    }
-
-    /// Computes the transform for a single layer. This currently chases the
-    /// full transform chain each time. If it becomes a bottleneck, we can
-    /// implement caching.
-    fn compute_transform(
-        &self,
-        layer_set: &[Layer],
-        layer: &Layer,
-        global_transform: Affine,
-        frame: f64,
-    ) -> Affine {
-        let mut transform = layer.transform.evaluate(frame).into_owned();
-        let mut parent_index = layer.parent;
-        let mut count = 0_usize;
-        while let Some(index) = parent_index {
-            // We don't check for cycles at import time, so this heuristic
-            // prevents infinite loops.
-            if count >= layer_set.len() {
-                break;
-            }
-            if let Some(parent) = layer_set.get(index) {
-                parent_index = parent.parent;
-                transform = parent.transform.evaluate(frame).into_owned() * transform;
-                count += 1;
-            } else {
-                break;
-            }
-        }
-        global_transform * transform
     }
 }
 

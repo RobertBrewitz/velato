@@ -19,14 +19,23 @@ This release has an [MSRV][] of 1.88.
 
 - Added animated Gaussian blur, drop shadow, fill, and tint effects through `RenderSink::push_filter`. Rendering requires a supporting sink; the built-in Vello sinks skip these effects.
 - Added `Layer::unsupported_effects` diagnostics for effects with unsupported types or invalid parameters.
+- Added `Renderer::try_append` to report invalid references and cycles before touching the render sink.
+- Added precomp time remapping (`tm`), converting seconds to frames using animation FPS.
 
 ### Changed
 
 - Updated crate documentation and README feature limitations to reflect renderer-independent rendering.
 - Position keyframes now retain spatial tangents (`ti`, `to`) and follow curved motion paths using temporally eased arc length. ([#120][] by [@RobertBrewitz])
+- `Renderer::append` now panics on invalid references and cycles. Engine callers should use `try_append` to handle these errors.
+- Static imported transforms retain authored components instead of being reduced to matrices.
+- `Layer::parent` and `Layer::mask_layer` now use `LayerReference` to distinguish resolved array indices from unresolved authored IDs.
+- Precomp property sampling now uses `frame / stretch - start`, with stretch/start applied before time remapping.
 
 ### Fixed
 
+- Hidden layers now retain content and effects when referenced, including as matte sources, while remaining excluded from normal rendering.
+- Unresolved imported parent and explicit matte references now produce errors instead of being silently discarded.
+- Omitted layer rotation now defaults to zero instead of panicking.
 - Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
 
 ## [0.12.0][] (2026-09-09)
