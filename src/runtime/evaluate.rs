@@ -14,14 +14,22 @@ pub struct OccurrencePath(pub Vec<usize>);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EvaluationError {
     NonFiniteTime,
+    /// Time remapping requires a finite, positive animation frame rate.
+    InvalidFrameRate,
     InvalidStretch(OccurrencePath),
     InvalidTransform(OccurrencePath),
     InvalidParent(OccurrencePath),
-    UnresolvedParent { path: OccurrencePath, id: usize },
+    UnresolvedParent {
+        path: OccurrencePath,
+        id: usize,
+    },
     ParentCycle(OccurrencePath),
     MatteCycle(OccurrencePath),
     InvalidMatte(OccurrencePath),
-    UnresolvedMatte { path: OccurrencePath, id: usize },
+    UnresolvedMatte {
+        path: OccurrencePath,
+        id: usize,
+    },
     MissingAsset(String),
     PrecompCycle(String),
 }
@@ -29,6 +37,9 @@ pub enum EvaluationError {
 impl std::fmt::Display for EvaluationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidFrameRate => {
+                f.write_str("Time remapping requires a finite, positive animation frame rate")
+            }
             Self::UnresolvedParent { path, id } => {
                 write!(
                     f,
@@ -48,8 +59,7 @@ impl std::fmt::Display for EvaluationError {
 impl std::error::Error for EvaluationError {}
 
 /// Drawing-independent layer evaluation. Hidden and out-of-range layers remain
-/// addressable. Matrices map layer content coordinates to parent composition
-/// (`local_transform`, before parenting) or root composition (`full_transform`).
+/// addressable. Coordinates are Lottie pixels, with positive Y pointing down.
 #[derive(Debug)]
 pub struct EvaluatedLayer<'a> {
     pub path: OccurrencePath,
@@ -66,7 +76,12 @@ pub struct EvaluatedLayer<'a> {
     /// Visibility in the normal tree, including containing precomp visibility.
     pub visible: bool,
     pub authored_components: Option<TransformComponents>,
+    /// Authored layer transform before parent/precomp composition. Maps layer
+    /// content into its transform parent's content space, or into the containing
+    /// composition when there is no transform parent.
     pub local_transform: Affine,
+    /// Maps layer content to root composition pixels, including transform parents
+    /// and containing precomp instances. Excludes the renderer's output transform.
     pub full_transform: Affine,
     /// Layer opacity as a fraction, without transform-parent opacity.
     pub opacity: f64,
@@ -132,7 +147,11 @@ impl EvaluatedLayer<'_> {
 pub struct AuthoredPath {
     /// Runtime indices through nested shape groups, not authored shape identifiers.
     pub indices: Vec<usize>,
+    /// Path elements before modifiers, in their owning shape group's coordinates
+    /// (layer coordinates for ungrouped geometry).
     pub elements: Vec<PathEl>,
+    /// Maps group coordinates to root composition pixels, excluding the renderer's
+    /// output transform. Includes enclosing groups, layers, parents and precomps.
     pub transform: Affine,
 }
 
@@ -172,6 +191,42 @@ impl Composition {
         )?;
         Ok(EvaluatedComposition { layers })
     }
+}
+
+#[derive(Clone, Copy)]
+enum VisitState {
+    Unvisited,
+    Visiting,
+    Visited,
+}
+
+/// Dependencies must be validated indices. Returns dependency-first order or a
+/// node on a cycle. The explicit stack avoids recursion for long parent chains.
+fn dependency_order(
+    count: usize,
+    dependency: impl Fn(usize) -> Option<usize>,
+) -> Result<Vec<usize>, usize> {
+    let mut states = vec![VisitState::Unvisited; count];
+    let mut stack = Vec::new();
+    let mut order = Vec::with_capacity(count);
+    for start in 0..count {
+        let mut current = Some(start);
+        while let Some(index) = current {
+            match states[index] {
+                VisitState::Visited => break,
+                VisitState::Visiting => return Err(index),
+                VisitState::Unvisited => {}
+            }
+            states[index] = VisitState::Visiting;
+            stack.push(index);
+            current = dependency(index);
+        }
+        while let Some(index) = stack.pop() {
+            states[index] = VisitState::Visited;
+            order.push(index);
+        }
+    }
+    Ok(order)
 }
 
 fn evaluate_layers<'a>(
@@ -248,35 +303,24 @@ fn evaluate_layers<'a>(
             children: Vec::new(),
         });
     }
-    for index in 0..layers.len() {
-        let mut transform = result[index].local_transform;
-        let mut parent = result[index].parent;
-        let mut seen = vec![index];
-        while let Some(p) = parent {
-            if seen.contains(&p) {
-                return Err(EvaluationError::ParentCycle(result[index].path.clone()));
-            }
-            let node = &result[p];
-            transform = node.local_transform * transform;
-            seen.push(p);
-            parent = node.parent;
-        }
-        result[index].full_transform = outer * transform;
-        if !result[index].full_transform.is_finite() {
+    let parent_order = dependency_order(result.len(), |index| result[index].parent)
+        .map_err(|index| EvaluationError::ParentCycle(result[index].path.clone()))?;
+    for index in parent_order {
+        let parent_transform = result[index]
+            .parent
+            .map_or(outer, |parent| result[parent].full_transform);
+        let transform = parent_transform * result[index].local_transform;
+        if !transform.is_finite() {
             return Err(EvaluationError::InvalidTransform(
                 result[index].path.clone(),
             ));
         }
-        let mut matte = result[index].matte;
-        let mut seen = vec![index];
-        while let Some((_, m)) = matte {
-            if seen.contains(&m) {
-                return Err(EvaluationError::MatteCycle(result[index].path.clone()));
-            }
-            seen.push(m);
-            matte = result[m].matte;
-        }
+        result[index].full_transform = transform;
     }
+    dependency_order(result.len(), |index| {
+        result[index].matte.map(|(_, source)| source)
+    })
+    .map_err(|index| EvaluationError::MatteCycle(result[index].path.clone()))?;
     for node in &mut result {
         if let Content::Instance { name, time_remap } = &node.layer.content {
             if assets.contains(name) {
@@ -289,7 +333,7 @@ fn evaluate_layers<'a>(
             let mut child_frame = node.property_frame;
             if let Some(tm) = time_remap {
                 if !animation.frame_rate.is_finite() || animation.frame_rate <= 0.0 {
-                    return Err(EvaluationError::NonFiniteTime);
+                    return Err(EvaluationError::InvalidFrameRate);
                 }
                 child_frame = tm.evaluate(child_frame) * animation.frame_rate;
             }
