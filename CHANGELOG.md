@@ -31,6 +31,7 @@ This release has an [MSRV][] of 1.88.
 - Compose consecutive trim-path offsets before wrapping to avoid spurious disconnected segments.
 - Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
 - Reject invalid animation frame rates duriing import ([#121][] by [@RobertBrewitz][])
+- Added plumbing to support animated effects through `RenderSink::push_filter`; Requires a supporting render sink. ([#123][] by [@RobertBrewitz][])
 
 ## [0.12.0][] (2026-09-09)
 
@@ -256,6 +257,7 @@ This release has an [MSRV][] of 1.75.
 [#120]: https://github.com/linebender/velato/pull/120
 [#121]: https://github.com/linebender/velato/pull/121
 [#122]: https://github.com/linebender/velato/pull/122
+[#123]: https://github.com/linebender/velato/pull/123
 
 [Unreleased]: https://github.com/linebender/velato/compare/v0.12.0...HEAD
 [0.12.0]: https://github.com/linebender/velato/compare/v0.11.0...v0.12.0
