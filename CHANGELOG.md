@@ -15,8 +15,14 @@ You can find its changes [documented below](#0120-2026-09-09).
 
 This release has an [MSRV][] of 1.88.
 
+### Added
+
+- Added animated Gaussian blur, drop shadow, fill, and tint effects through `RenderSink::push_filter`. Rendering requires a supporting sink; the built-in Vello sinks skip these effects.
+- Added `Layer::unsupported_effects` diagnostics for effects with unsupported types or invalid parameters.
+
 ### Changed
 
+- Updated crate documentation and README feature limitations to reflect renderer-independent rendering.
 - Position keyframes now retain spatial tangents (`ti`, `to`) and follow curved motion paths using temporally eased arc length. ([#120][] by [@RobertBrewitz])
 
 ### Fixed
