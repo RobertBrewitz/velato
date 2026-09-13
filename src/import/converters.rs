@@ -232,7 +232,7 @@ pub fn conv_transform(
             // todo: need to actually handle split rotations
             schema::helpers::transform::AnyTransformR::SplitRotation { .. } => todo!(),
         },
-        None => todo!("split rotation"),
+        None => &FLOAT_VALUE_ZERO,
     };
 
     let position = match &value.position {
