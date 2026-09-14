@@ -3,7 +3,7 @@
 
 use super::converters::{conv_blend_mode, conv_scalar, conv_shape_geometry, conv_transform};
 use super::defaults::FLOAT_VALUE_ONE_HUNDRED;
-use crate::runtime::model::Layer;
+use crate::runtime::model::{Layer, LayerReference};
 use crate::schema::helpers::int_boolean::BoolInt;
 use crate::{runtime, schema};
 use peniko::{self, BlendMode, Compose, Mix};
@@ -25,7 +25,11 @@ pub fn setup_precomp_layer(
         .name
         .clone()
         .unwrap_or_default();
-    target.parent = source.visual_layer.layer.parent_index;
+    target.parent = source
+        .visual_layer
+        .layer
+        .parent_index
+        .map(LayerReference::Unresolved);
     let (transform, opacity) = conv_transform(&source.visual_layer.transform);
     target.transform = transform;
     target.opacity = opacity;
@@ -110,7 +114,11 @@ pub fn setup_shape_layer(
         .name
         .clone()
         .unwrap_or_default();
-    target.parent = source.visual_layer.layer.parent_index;
+    target.parent = source
+        .visual_layer
+        .layer
+        .parent_index
+        .map(LayerReference::Unresolved);
     let (transform, opacity) = conv_transform(&source.visual_layer.transform);
     target.transform = transform;
     target.opacity = opacity;
@@ -187,7 +195,7 @@ pub fn setup_layer_base(
     target: &mut Layer,
 ) -> LayerSetupParams {
     target.name = source.layer.visual_object.name.clone().unwrap_or_default();
-    target.parent = source.layer.parent_index;
+    target.parent = source.layer.parent_index.map(LayerReference::Unresolved);
     let (transform, opacity) = conv_transform(&source.transform);
     target.transform = transform;
     target.opacity = opacity;

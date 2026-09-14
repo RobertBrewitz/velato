@@ -41,44 +41,36 @@ fn process_layers(
         }
     }
 
-    let matte_targets: HashMap<usize, usize> = converted
-        .iter()
-        .enumerate()
-        .filter(|(_, (layer, _, _, _))| layer.is_mask)
-        .map(|(idx, (_, id, _, _))| (*id, idx))
-        .collect();
-
     let mut layers: Vec<Layer> = Vec::with_capacity(converted.len());
-    let mut prev_matte_layer: Option<usize> = None;
+    let resolve = |id| {
+        idmap.get(&id).copied().map_or(
+            model::LayerReference::Unresolved(id),
+            model::LayerReference::Resolved,
+        )
+    };
 
     for (idx, (mut layer, _id, matte_mode, explicit_matte_index)) in
         converted.into_iter().enumerate()
     {
-        if let Some(parent) = layer.parent {
-            layer.parent = idmap.get(&parent).copied();
+        if let Some(model::LayerReference::Unresolved(id)) = layer.parent {
+            layer.parent = Some(resolve(id));
         }
 
-        if let Some(matte_mode) = matte_mode {
-            let matte_layer_idx = if let Some(explicit_idx) = explicit_matte_index {
-                idmap.get(&explicit_idx).copied()
+        if let Some(mode) = matte_mode.filter(|mode| *mode != Mix::Normal.into()) {
+            let reference = if let Some(id) = explicit_matte_index {
+                Some(resolve(id))
             } else {
-                prev_matte_layer
+                idx.checked_sub(1).map(model::LayerReference::Resolved)
             };
-
-            if let Some(matte_idx) = matte_layer_idx {
-                layer.mask_layer = Some((matte_mode, matte_idx));
-            }
+            layer.mask_layer = reference.map(|reference| (mode, reference));
         }
-
-        if layer.is_mask {
-            prev_matte_layer = Some(idx);
-        } else if matte_mode.is_some() {
-            prev_matte_layer = None;
-        }
-
         layers.push(layer);
     }
-
+    for index in 0..layers.len() {
+        if let Some((_, model::LayerReference::Resolved(source))) = layers[index].mask_layer {
+            layers[source].is_mask = true;
+        }
+    }
     layers
 }
 
@@ -157,7 +149,7 @@ pub fn conv_layer(
 ) -> Option<(Layer, usize, Option<BlendMode>, Option<usize>)> {
     let mut layer = Layer::default();
 
-    let hidden = is_layer_hidden(source);
+    layer.hidden = is_layer_hidden(source);
 
     let params = match source {
         schema::layers::AnyLayer::Null(null_layer) => {
@@ -165,24 +157,20 @@ pub fn conv_layer(
         }
         schema::layers::AnyLayer::Precomposition(precomp_layer) => {
             let params = setup_precomp_layer(precomp_layer, &mut layer);
-            if !hidden {
-                let name = precomp_layer.ref_id.clone();
-                let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
-                layer.content = Content::Instance { name, time_remap };
-            }
+            let name = precomp_layer.ref_id.clone();
+            let time_remap = precomp_layer.time_remap.as_ref().map(conv_scalar);
+            layer.content = Content::Instance { name, time_remap };
             params
         }
         schema::layers::AnyLayer::Shape(shape_layer) => {
             let params = setup_shape_layer(shape_layer, &mut layer);
-            if !hidden {
-                let mut shapes = vec![];
-                for shape in &shape_layer.shapes {
-                    if let Some(shape) = conv_shape(shape) {
-                        shapes.push(shape);
-                    }
+            let mut shapes = vec![];
+            for shape in &shape_layer.shapes {
+                if let Some(shape) = conv_shape(shape) {
+                    shapes.push(shape);
                 }
-                layer.content = Content::Shape(shapes);
             }
+            layer.content = Content::Shape(shapes);
             params
         }
         schema::layers::AnyLayer::Solid(solid_color_layer) => {
@@ -190,18 +178,12 @@ pub fn conv_layer(
         }
         schema::layers::AnyLayer::Image(image_layer) => {
             let params = setup_layer_base(&image_layer.visual_layer, &mut layer);
-            if !hidden {
-                layer.content = Content::Image {
-                    asset_id: image_layer.ref_id.clone(),
-                };
-            }
+            layer.content = Content::Image {
+                asset_id: image_layer.ref_id.clone(),
+            };
             params
         }
     };
-
-    if hidden {
-        layer.is_mask = false;
-    }
 
     let LayerSetupParams {
         layer_index: id,
@@ -1147,17 +1129,19 @@ mod tests {
     }
 
     #[test]
-    fn hidden_layer_has_no_content() {
+    fn hidden_layer_retains_content() {
         let source = make_shape_layer(true, false);
         let (layer, ..) = conv_layer(&source).unwrap();
-        assert!(matches!(layer.content, Content::None));
+        assert!(layer.hidden);
+        assert!(matches!(layer.content, Content::Shape(_)));
     }
 
     #[test]
-    fn hidden_matte_layer_has_is_mask_false() {
+    fn hidden_matte_layer_retains_is_mask() {
         let source = make_shape_layer(true, true);
         let (layer, ..) = conv_layer(&source).unwrap();
-        assert!(!layer.is_mask);
+        assert!(layer.hidden);
+        assert!(layer.is_mask);
     }
 
     #[test]

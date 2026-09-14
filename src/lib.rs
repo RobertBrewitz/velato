@@ -95,4 +95,7 @@ pub use error::Error;
 #[cfg(feature = "vello")]
 pub use vello;
 
-pub use runtime::{Composition, RenderSink, Renderer, model};
+pub use runtime::{
+    AuthoredPath, Composition, EvaluatedComposition, EvaluatedLayer, EvaluationError,
+    OccurrencePath, RenderSink, Renderer, model,
+};

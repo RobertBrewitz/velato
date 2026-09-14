@@ -15,6 +15,22 @@ You can find its changes [documented below](#0120-2026-09-09).
 
 This release has an [MSRV][] of 1.88.
 
+### Added
+
+- Added drawing-independent queries for layer hierarchy, transforms, anchors, visibility, and authored paths before modifiers.
+
+### Changed
+
+- Invalid layer references and hierarchy cycles are now rejected before rendering; `Renderer::try_append` returns errors, while `Renderer::append` panics.
+- Layer parent and matte references now distinguish resolved runtime indices from unresolved authored IDs.
+- Imported static transforms retain their authored components instead of being reduced to matrices.
+
+### Fixed
+
+- Hidden layers retain content when used as matte sources while remaining excluded from normal rendering.
+- Implicit track mattes use the immediately preceding layer; resolved matte sources are excluded from normal rendering even without `td`.
+
+
 ## [0.12.0][] (2026-09-09)
 
 This release has an [MSRV][] of 1.88.
