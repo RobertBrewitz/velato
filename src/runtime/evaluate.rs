@@ -77,6 +77,17 @@ impl EvaluatedLayer<'_> {
             .map(|c| self.full_transform * c.anchor)
     }
 
+    /// Geometry after group transforms, trims, and repeaters, in root composition pixels.
+    /// Excludes paint, stroke expansion, masks, and effects; ignores visibility and opacity.
+    pub fn evaluated_paths(&self) -> Vec<kurbo::BezPath> {
+        match &self.layer.content {
+            Content::Shape(shapes) => {
+                super::render::evaluate_paths(shapes, self.full_transform, self.property_frame)
+            }
+            _ => Vec::new(),
+        }
+    }
+
     /// Authored paths BEFORE modifiers, repeaters, masks, paint, stroke expansion,
     /// and effects. Elements are group-local; transforms map to root composition
     /// pixels. These are not rendered silhouettes.
