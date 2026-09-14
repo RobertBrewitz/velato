@@ -15,6 +15,14 @@ You can find its changes [documented below](#0120-2026-09-09).
 
 This release has an [MSRV][] of 1.88.
 
+### Fixed
+
+- Respect trim-path mode for independent and sequential trimming, preserving disconnected contours and accounting for nested shape transforms.
+- Apply consecutive trim paths in order, preserving each modifier's mode and trimming only surviving geometry.
+- Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
+- Honor authored ellipse and rectangle path directions, including reversed traversal.
+- Start ellipse paths at the top and rectangle paths at the top-right, using Lottie-defined rounded-rectangle control points so trim paths follow the expected geometry.
+
 ## [0.12.0][] (2026-09-09)
 
 This release has an [MSRV][] of 1.88.

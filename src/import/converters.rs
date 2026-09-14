@@ -676,6 +676,12 @@ fn conv_shape(value: &schema::shapes::AnyShape) -> Option<crate::runtime::model:
         }
         schema::shapes::AnyShape::Trim(value) => {
             let trim = animated::Trim {
+                mode: match value.multiple {
+                    Some(
+                        schema::constants::trim_multiple_shapes::TrimMultipleShapes::Sequential,
+                    ) => model::TrimMode::Sequential,
+                    _ => model::TrimMode::Parallel,
+                },
                 start: conv_scalar(&value.start),
                 end: conv_scalar(&value.end),
                 offset: conv_scalar(&value.offset),
@@ -691,8 +697,10 @@ fn conv_geometry(value: &schema::shapes::AnyShape) -> Option<crate::runtime::mod
     match value {
         AnyShape::Ellipse(value) => {
             let ellipse = animated::Ellipse {
-                is_ccw: false, /* todo: lottie schema does not have a field
-                                * for this (anymore?) */
+                is_ccw: matches!(
+                    value.shape.direction,
+                    Some(schema::constants::shape_direction::ShapeDirection::Reversed)
+                ),
                 position: conv_pos_point(&value.position),
                 size: conv_size(&value.size),
             };
@@ -700,8 +708,10 @@ fn conv_geometry(value: &schema::shapes::AnyShape) -> Option<crate::runtime::mod
         }
         AnyShape::Rectangle(value) => {
             let rect = animated::Rect {
-                is_ccw: false, /* todo: lottie schema does not have a field
-                                * for this (anymore?) */
+                is_ccw: matches!(
+                    value.shape.direction,
+                    Some(schema::constants::shape_direction::ShapeDirection::Reversed)
+                ),
                 position: conv_pos_point(&value.position),
                 size: conv_size(&value.size),
                 corner_radius: conv_scalar(&value.rounded_corner_radius),
