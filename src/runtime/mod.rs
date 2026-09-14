@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 mod render;
+mod trim;
 
 use crate::Error;
 use crate::import;
