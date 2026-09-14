@@ -4,7 +4,10 @@
 use super::model::{
     Content, Draw, Geometry, GroupTransform, ImageAsset, RepeaterComposite, Shape, fixed,
 };
-use super::{Composition, EvaluatedLayer, EvaluationError, FilterEffect, FilterLayerResult};
+use super::{
+    Composition, EvaluatedComposition, EvaluatedLayer, EvaluationError, FilterEffect,
+    FilterLayerResult,
+};
 use kurbo::{Affine, PathEl, Rect};
 use peniko::Mix;
 use std::mem::swap;
@@ -84,7 +87,7 @@ impl Renderer {
             .expect("Lottie hierarchy evaluation failed");
     }
 
-    /// Evaluates before touching the sink. Reevaluates rather than consuming an existing snapshot.
+    /// Evaluates before touching the sink. Use [`Self::append_evaluated`] to reuse an evaluation.
     pub fn try_append(
         &mut self,
         animation: &Composition,
@@ -94,27 +97,40 @@ impl Renderer {
         scene: &mut impl RenderSink,
     ) -> Result<(), EvaluationError> {
         let evaluated = animation.evaluate(frame)?;
+        self.append_evaluated(&evaluated, transform, alpha, scene);
+        Ok(())
+    }
+
+    /// Appends an evaluation without reevaluating hierarchy or timing.
+    /// Content properties are sampled during drawing; composition changes require a new evaluation.
+    pub fn append_evaluated(
+        &mut self,
+        evaluation: &EvaluatedComposition<'_>,
+        output_transform: Affine,
+        alpha: f64,
+        sink: &mut impl RenderSink,
+    ) {
+        let animation = evaluation.composition;
         self.batch.clear();
         let clip = Rect::new(0.0, 0.0, animation.width as _, animation.height as _);
-        let clip_bounds = transform.transform_rect_bbox(clip);
-        scene.push_clip_layer(transform, &clip);
-        for (layer_index, layer) in evaluated.layers.iter().enumerate().rev() {
+        let clip_bounds = output_transform.transform_rect_bbox(clip);
+        sink.push_clip_layer(output_transform, &clip);
+        for (layer_index, layer) in evaluation.layers.iter().enumerate().rev() {
             if !layer.visible {
                 continue;
             }
             self.render_layer(
                 animation,
-                &evaluated.layers,
+                &evaluation.layers,
                 layer,
                 layer_index,
-                transform,
+                output_transform,
                 alpha,
                 &clip_bounds,
-                scene,
+                sink,
             );
         }
-        scene.pop_layer();
-        Ok(())
+        sink.pop_layer();
     }
 
     #[expect(clippy::too_many_arguments, reason = "Deferred")]

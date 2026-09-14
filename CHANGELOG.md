@@ -19,6 +19,7 @@ This release has an [MSRV][] of 1.88.
 
 - Added drawing-independent queries for layer hierarchy, transforms, anchors, visibility, and authored paths before modifiers.
 - Added `EvaluatedLayer::evaluated_paths` for root-space geometry after group transforms, trims, and repeaters.
+- Added `Renderer::append_evaluated` to render an existing composition evaluation.
 - Added engine layer emission overrides via metadata and `RenderSink::set_layer_emission`; requires a supporting sink.
 - Added precomposition time remapping (`tm`) support. ([#121][] by [@RobertBrewitz][])
 - Added plumbing to support animated effects through `RenderSink::push_filter`; Requires a supporting render sink. ([#123][] by [@RobertBrewitz][])

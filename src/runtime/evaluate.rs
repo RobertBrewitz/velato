@@ -149,6 +149,7 @@ pub struct AuthoredPath {
 
 #[derive(Debug)]
 pub struct EvaluatedComposition<'a> {
+    pub(crate) composition: &'a Composition,
     pub layers: Vec<EvaluatedLayer<'a>>,
 }
 
@@ -179,7 +180,10 @@ impl Composition {
             &mut Vec::new(),
             &mut Vec::new(),
         )?;
-        Ok(EvaluatedComposition { layers })
+        Ok(EvaluatedComposition {
+            composition: self,
+            layers,
+        })
     }
 }
 
