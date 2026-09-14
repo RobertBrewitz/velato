@@ -23,6 +23,9 @@ This release has an [MSRV][] of 1.88.
 ### Changed
 
 - Position keyframes now retain spatial tangents (`ti`, `to`) and follow curved motion paths using temporally eased arc length. ([#120][] by [@RobertBrewitz])
+- Respect trim-path mode for independent and sequential trimming, preserving disconnected contours and accounting for nested shape transforms.
+- Compose consecutive trim-path offsets before wrapping to avoid spurious disconnected segments.
+- Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
 
 ## [0.12.0][] (2026-09-09)
 

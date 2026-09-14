@@ -195,7 +195,7 @@ impl Geometry {
                 path.extend(value.evaluate(frame).path_elements(0.1));
             }
             Self::Ellipse(value) => {
-                path.extend(value.evaluate(frame).path_elements(0.1));
+                value.evaluate_path(frame, path);
             }
             Self::Spline(value) => {
                 value.evaluate(frame, path);
@@ -310,6 +310,16 @@ pub enum Content {
     Image { asset_id: String },
     /// Collection of shapes.
     Shape(Vec<Shape>),
+}
+
+/// How trim ranges apply to multiple contours.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum TrimMode {
+    /// Apply the range independently to each contour (`m: 1`).
+    #[default]
+    Parallel,
+    /// Apply the range across combined contour lengths in render order (`m: 2`).
+    Sequential,
 }
 
 #[derive(Clone, Debug)]

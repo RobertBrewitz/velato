@@ -116,6 +116,25 @@ impl Ellipse {
         let radii = (size.width * 0.5, size.height * 0.5);
         kurbo::Ellipse::new(position, radii, 0.0)
     }
+
+    /// Appends a closed ellipse from the top quadrant in the authored direction.
+    pub fn evaluate_path(&self, frame: f64, path: &mut Vec<PathEl>) {
+        let center = self.position.evaluate(frame);
+        let size = self.size.evaluate(frame);
+        let arc = kurbo::Arc {
+            center,
+            radii: Vec2::new(size.width * 0.5, size.height * 0.5),
+            start_angle: -std::f64::consts::FRAC_PI_2,
+            sweep_angle: if self.is_ccw {
+                -std::f64::consts::TAU
+            } else {
+                std::f64::consts::TAU
+            },
+            x_rotation: 0.0,
+        };
+        path.extend(arc.path_elements(0.1));
+        path.push(PathEl::ClosePath);
+    }
 }
 
 /// Animated rounded rectangle.
@@ -556,6 +575,7 @@ impl Brush {
 
 #[derive(Clone, Debug)]
 pub struct Trim {
+    pub mode: super::TrimMode,
     /// Start of the visible segment (0.0 to 100.0).
     pub start: Value<f64>,
     /// End of the visible segment (0.0 to 100.0).
@@ -573,6 +593,7 @@ impl Trim {
     /// Evaluates the trim at the specified frame.
     pub fn evaluate(&self, frame: f64) -> fixed::Trim {
         fixed::Trim {
+            mode: self.mode,
             start: self.start.evaluate(frame),
             end: self.end.evaluate(frame),
             offset: self.offset.evaluate(frame),
