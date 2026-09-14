@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
 mod effects;
+mod evaluate;
 mod render;
 mod trim;
 
@@ -17,6 +18,9 @@ mod vello;
 pub mod model;
 
 pub use effects::{BlurEdgeMode, FilterEffect, FilterLayerResult};
+pub use evaluate::{
+    AuthoredPath, EvaluatedComposition, EvaluatedLayer, EvaluationError, OccurrencePath,
+};
 pub use render::{RenderSink, Renderer};
 
 /// Model of a Lottie file.

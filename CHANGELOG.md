@@ -17,16 +17,22 @@ This release has an [MSRV][] of 1.88.
 
 ### Added
 
+- Added drawing-independent queries for layer hierarchy, transforms, anchors, visibility, and authored paths before modifiers.
 - Added precomposition time remapping (`tm`) support. ([#121][] by [@RobertBrewitz][])
+
+### Changed
+
+- Invalid layer references and hierarchy cycles are now rejected before rendering; `Renderer::try_append` returns errors, while `Renderer::append` panics.
+- Position keyframes now retain spatial tangents (`ti`, `to`) and follow curved motion paths using temporally eased arc length. ([#120][] by [@RobertBrewitz])
 
 ### Fixed
 
 - Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
 - Fixed omitted layer rotation causing panick during import. ([#122][] by [@RobertBrewitz][])
-
-### Changed
-
-- Position keyframes now retain spatial tangents (`ti`, `to`) and follow curved motion paths using temporally eased arc length. ([#120][] by [@RobertBrewitz])
+- Hidden layers retain content and effects when used as matte sources while remaining excluded from normal rendering.
+- Implicit track mattes use the immediately preceding layer; resolved matte sources are excluded from normal rendering even without `td`.
+- Fixed omitted layer rotation causing panick during import. ([#122][] by [@RobertBrewitz][])
+- Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
 - Respect trim-path mode for independent and sequential trimming, preserving disconnected contours and accounting for nested shape transforms.
 - Compose consecutive trim-path offsets before wrapping to avoid spurious disconnected segments.
 - Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
