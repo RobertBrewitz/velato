@@ -44,6 +44,11 @@ pub trait RenderSink {
     /// - `index` is the layer's position in the layer array.
     fn begin_layer_group(&mut self, _name: &str, _index: usize) {}
 
+    /// Linear-light brightness for supporting sinks.
+    ///
+    /// Sinks restore inherited intensity when the group ends.
+    fn set_layer_emission(&mut self, _emission: f32) {}
+
     /// Called after rendering a Lottie layer.
     fn end_layer_group(&mut self) {}
 }
@@ -130,6 +135,9 @@ impl Renderer {
         let layer = evaluated.layer;
         let frame = evaluated.property_frame;
         scene.begin_layer_group(&layer.name, layer_index);
+        if let Some(emission) = layer.emission {
+            scene.set_layer_emission(emission);
+        }
         let parent_transform = output_transform;
         let transform = output_transform * evaluated.full_transform;
         let full_rect = Rect::new(0.0, 0.0, animation.width as f64, animation.height as f64);
