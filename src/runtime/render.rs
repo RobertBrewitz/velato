@@ -5,10 +5,7 @@ use super::model::{
     Content, Draw, Geometry, GroupTransform, ImageAsset, RepeaterComposite, Shape, fixed,
 };
 use super::{Composition, EvaluatedLayer, EvaluationError, FilterEffect, FilterLayerResult};
-use kurbo::{
-    Affine, BezPath, CubicBez, Line, ParamCurve, ParamCurveArclen, PathEl, PathSeg, Point, QuadBez,
-    Rect,
-};
+use kurbo::{Affine, PathEl, Rect};
 use peniko::Mix;
 use std::mem::swap;
 use std::ops::Range;
@@ -232,8 +229,7 @@ impl Renderer {
         // Also keep track of top of draw stack for repeater evaluation.
         let draw_start = self.batch.draws.len();
         // Top to bottom, collect geometries and draws.
-        let mut shapes = shapes.iter().peekable();
-        while let Some(shape) = shapes.next() {
+        for shape in shapes {
             match shape {
                 Shape::Group(shapes, group_transform) => {
                     let (group_transform, group_alpha) =
@@ -259,12 +255,8 @@ impl Renderer {
                         .repeat(repeater.as_ref(), geometry_start, draw_start);
                 }
                 Shape::Trim(trim) => {
-                    let mut trim = trim.evaluate(frame).into_owned();
-                    while let Some(Shape::Trim(next)) = shapes.peek() {
-                        trim = trim.compose(next.evaluate(frame).as_ref());
-                        shapes.next();
-                    }
-                    self.batch.apply_trim(&trim, geometry_start);
+                    let trim = trim.evaluate(frame);
+                    self.batch.apply_trim(trim.as_ref(), geometry_start);
                 }
             }
         }

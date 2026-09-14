@@ -203,10 +203,10 @@ impl Geometry {
                 path.extend_from_slice(value);
             }
             Self::Rect(value) => {
-                path.extend(value.evaluate(frame).path_elements(0.1));
+                value.evaluate(frame, path);
             }
             Self::Ellipse(value) => {
-                value.evaluate_path(frame, path);
+                value.evaluate(frame, path);
             }
             Self::Spline(value) => {
                 value.evaluate(frame, path);

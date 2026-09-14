@@ -102,15 +102,8 @@ impl Ellipse {
         self.position.is_fixed() && self.size.is_fixed()
     }
 
-    pub fn evaluate(&self, frame: f64) -> kurbo::Ellipse {
-        let position = self.position.evaluate(frame);
-        let size = self.size.evaluate(frame);
-        let radii = (size.width * 0.5, size.height * 0.5);
-        kurbo::Ellipse::new(position, radii, 0.0)
-    }
-
     /// Appends a closed ellipse from the top quadrant in the authored direction.
-    pub fn evaluate_path(&self, frame: f64, path: &mut Vec<PathEl>) {
+    pub fn evaluate(&self, frame: f64, path: &mut Vec<PathEl>) {
         let center = self.position.evaluate(frame);
         let size = self.size.evaluate(frame);
         let arc = kurbo::Arc {
@@ -127,6 +120,7 @@ impl Ellipse {
         path.extend(arc.path_elements(0.1));
         path.push(PathEl::ClosePath);
     }
+
 }
 
 /// Animated rounded rectangle.
@@ -148,22 +142,61 @@ impl Rect {
         self.position.is_fixed() && self.size.is_fixed() && self.corner_radius.is_fixed()
     }
 
-    /// Evaluates the rectangle at the specified frame.
-    pub fn evaluate(&self, frame: f64) -> kurbo::RoundedRect {
-        let position = self.position.evaluate(frame);
+    /// Appends a rounded rectangle from the top-right in the authored direction.
+    pub fn evaluate(&self, frame: f64, path: &mut Vec<PathEl>) {
+        let center = self.position.evaluate(frame);
         let size = self.size.evaluate(frame);
-        let position = Point::new(
-            position.x - size.width * 0.5,
-            position.y - size.height * 0.5,
-        );
-        let radius = self.corner_radius.evaluate(frame);
-        kurbo::RoundedRect::new(
-            position.x,
-            position.y,
-            position.x + size.width,
-            position.y + size.height,
-            radius,
-        )
+        let left = center.x - size.width * 0.5;
+        let right = center.x + size.width * 0.5;
+        let top = center.y - size.height * 0.5;
+        let bottom = center.y + size.height * 0.5;
+        let radius = self
+            .corner_radius
+            .evaluate(frame)
+            .min(size.width * 0.5)
+            .min(size.height * 0.5)
+            .max(0.0);
+        let mut outline = kurbo::BezPath::new();
+        outline.move_to((right, top + radius));
+        if radius == 0.0 {
+            outline.line_to((right, bottom));
+            outline.line_to((left, bottom));
+            outline.line_to((left, top));
+            // An explicit closing edge keeps reversal anchored at the authored start.
+            outline.line_to((right, top));
+        } else {
+            let tangent = radius * 0.551_915_024_493_510_6;
+            outline.line_to((right, bottom - radius));
+            outline.curve_to(
+                (right, bottom - radius + tangent),
+                (right - radius + tangent, bottom),
+                (right - radius, bottom),
+            );
+            outline.line_to((left + radius, bottom));
+            outline.curve_to(
+                (left + radius - tangent, bottom),
+                (left, bottom - radius + tangent),
+                (left, bottom - radius),
+            );
+            outline.line_to((left, top + radius));
+            outline.curve_to(
+                (left, top + radius - tangent),
+                (left + radius - tangent, top),
+                (left + radius, top),
+            );
+            outline.line_to((right - radius, top));
+            outline.curve_to(
+                (right - radius + tangent, top),
+                (right, top + radius - tangent),
+                (right, top + radius),
+            );
+        }
+        outline.close_path();
+        if self.is_ccw {
+            path.extend(outline.reverse_subpaths().elements());
+        } else {
+            path.extend(outline.elements());
+        }
     }
 }
 

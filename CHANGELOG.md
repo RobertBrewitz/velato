@@ -19,6 +19,7 @@ This release has an [MSRV][] of 1.88.
 
 - Added drawing-independent queries for layer hierarchy, transforms, anchors, visibility, and authored paths before modifiers.
 - Added precomposition time remapping (`tm`) support. ([#121][] by [@RobertBrewitz][])
+- Added plumbing to support animated effects through `RenderSink::push_filter`; Requires a supporting render sink. ([#123][] by [@RobertBrewitz][])
 
 ### Changed
 
@@ -27,17 +28,16 @@ This release has an [MSRV][] of 1.88.
 
 ### Fixed
 
-- Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
-- Fixed omitted layer rotation causing panick during import. ([#122][] by [@RobertBrewitz][])
 - Hidden layers retain content and effects when used as matte sources while remaining excluded from normal rendering.
 - Implicit track mattes use the immediately preceding layer; resolved matte sources are excluded from normal rendering even without `td`.
 - Fixed omitted layer rotation causing panick during import. ([#122][] by [@RobertBrewitz][])
 - Fixed reversed transform skew direction for nonzero `sk` values. ([#119][] by [@RobertBrewitz])
 - Respect trim-path mode for independent and sequential trimming, preserving disconnected contours and accounting for nested shape transforms.
-- Compose consecutive trim-path offsets before wrapping to avoid spurious disconnected segments.
+- Apply consecutive trim paths in order, preserving each modifier's mode and trimming only surviving geometry.
 - Apply sequential trims across the combined lengths of repeater copies without changing paint stacking.
 - Reject invalid animation frame rates duriing import ([#121][] by [@RobertBrewitz][])
-- Added plumbing to support animated effects through `RenderSink::push_filter`; Requires a supporting render sink. ([#123][] by [@RobertBrewitz][])
+- Honor authored ellipse and rectangle path directions, including reversed traversal.
+- Start ellipse paths at the top and rectangle paths at the top-right, using Lottie-defined rounded-rectangle control points so trim paths follow the expected geometry.
 
 ## [0.12.0][] (2026-09-09)
 

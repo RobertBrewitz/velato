@@ -85,26 +85,6 @@ pub struct Trim {
 type NormalizedTrim = ((f64, f64), Option<(f64, f64)>);
 
 impl Trim {
-    /// Composes a following trim before wrapping either interval around the path.
-    pub fn compose(&self, next: &Self) -> Self {
-        let interval = |trim: &Self| {
-            let start = trim.start.clamp(0.0, 100.0) / 100.0;
-            let end = trim.end.clamp(0.0, 100.0) / 100.0;
-            (
-                start.min(end) + (trim.offset % 360.0) / 360.0,
-                (end - start).abs(),
-            )
-        };
-        let (start, length) = interval(self);
-        let (next_start, next_length) = interval(next);
-        Self {
-            mode: self.mode,
-            start: 0.0,
-            end: length * next_length * 100.0,
-            offset: (start + length * next_start) * 360.0,
-        }
-    }
-
     // Returns normalized segments in 0.0..1.0 range.
     /// Second tuple element is Some if offset causes wrap-around.
     pub fn normalized(&self) -> Option<NormalizedTrim> {
