@@ -106,6 +106,8 @@ pub struct Time {
 impl Time {
     /// Returns the frame indices and interpolation weight for the given frame,
     /// and whether to hold the frame
+    // Spline callers discard easing; inlining lets them avoid constructing it.
+    #[inline]
     pub(crate) fn frames_and_weight(
         times: &[Time],
         frame: f64,
@@ -114,17 +116,31 @@ impl Time {
             return None;
         }
         use core::cmp::Ordering::*;
-        let ix = match times.binary_search_by(|x| {
-            if x.frame < frame {
-                Less
-            } else if x.frame > frame {
-                Greater
-            } else {
-                Equal
+        let ix = match times {
+            [_] => 0,
+            [_, next] => usize::from(!(next.frame > frame)),
+            [_, middle, last] => {
+                // Match binary_search_by's rightward choice on equality, including NaN.
+                if middle.frame > frame {
+                    0
+                } else if last.frame > frame {
+                    1
+                } else {
+                    2
+                }
             }
-        }) {
-            Ok(ix) => ix,
-            Err(ix) => ix.saturating_sub(1),
+            _ => match times.binary_search_by(|x| {
+                if x.frame < frame {
+                    Less
+                } else if x.frame > frame {
+                    Greater
+                } else {
+                    Equal
+                }
+            }) {
+                Ok(ix) => ix,
+                Err(ix) => ix.saturating_sub(1),
+            },
         };
         let ix0 = ix.min(times.len() - 1);
         let ix1 = (ix0 + 1).min(times.len() - 1);
