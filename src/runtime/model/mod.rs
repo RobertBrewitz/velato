@@ -340,6 +340,8 @@ pub struct Layer {
     pub effects: Vec<LayerEffect>,
     /// Effects Velato could not import because their type is unsupported or their parameters are invalid.
     pub unsupported_effects: Vec<UnsupportedEffect>,
+    /// Linear-light brightness for supporting sinks, inherited when absent.
+    pub emission: Option<f32>,
     /// Name of the layer.
     pub name: String,
     /// Transform parent in the same composition; `None` means no authored parent.
