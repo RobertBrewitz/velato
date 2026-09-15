@@ -187,8 +187,14 @@ mod tests {
             },
         )]
         .into();
-        let scene =
-            Renderer::new().render_to_vello_scene(&animation, &images, 0.0, Affine::IDENTITY, 1.0);
+        let mut renderer = Renderer::new();
+        assert!(
+            renderer
+                .try_prepare(&animation, 0.0, Affine::IDENTITY, 1.0, 0.1)
+                .unwrap()
+                .is_none()
+        );
+        let scene = renderer.render_to_vello_scene(&animation, &images, 0.0, Affine::IDENTITY, 1.0);
         assert_eq!(scene.encoding().resources.patches.len(), 1);
     }
 }

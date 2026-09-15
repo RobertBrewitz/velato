@@ -106,7 +106,8 @@ impl Renderer {
 
     /// Draws a saved evaluation without recalculating layer hierarchy, timing or transforms.
     ///
-    /// Shape and paint properties are still sampled during drawing.
+    /// Shape and paint properties are still sampled during drawing. To record their evaluated
+    /// drawing commands for later replay instead, use [`Self::try_prepare`].
     ///
     /// NOTE: this is not a frame cache.
     pub fn append_evaluated(
