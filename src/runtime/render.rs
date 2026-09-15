@@ -13,6 +13,9 @@ use peniko::Mix;
 use std::mem::swap;
 use std::ops::Range;
 
+mod prepared;
+pub use prepared::PreparedScene;
+
 pub trait RenderSink {
     fn push_layer(
         &mut self,
