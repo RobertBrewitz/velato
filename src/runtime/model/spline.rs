@@ -25,7 +25,7 @@ pub trait SplineToPath {
             let to_index = 3 * to_vertex;
             let c0 = self.get(from_index + 2);
             let c1 = self.get(to_index + 1);
-            push_segment(path, p0, c0, p1, c1);
+            path.push(segment(p0, c0, p1, c1));
             p0 = p1;
         };
         for i in 1..n_vertices {
@@ -81,29 +81,30 @@ impl SplineToPath for (&'_ [Point], &'_ [Point], f64) {
         let mut previous = first;
         let mut outgoing = from[2].lerp(to[2], self.2);
         path.push(PathEl::MoveTo(first));
-        for (from, to) in vertices {
+        path.extend(vertices.map(|(from, to)| {
             let point = from[0].lerp(to[0], self.2);
             let incoming = from[1].lerp(to[1], self.2);
-            push_segment(path, previous, outgoing, point, incoming);
+            let element = segment(previous, outgoing, point, incoming);
             previous = point;
             outgoing = from[2].lerp(to[2], self.2);
-        }
+            element
+        }));
         if close {
-            push_segment(path, previous, outgoing, first, first_in);
+            path.push(segment(previous, outgoing, first, first_in));
             path.push(PathEl::ClosePath);
         }
         Some(())
     }
 }
 
-fn push_segment(path: &mut Vec<PathEl>, p0: Point, mut c0: Point, p1: Point, mut c1: Point) {
+fn segment(p0: Point, mut c0: Point, p1: Point, mut c1: Point) -> PathEl {
     c0.x += p0.x;
     c0.y += p0.y;
     c1.x += p1.x;
     c1.y += p1.y;
     if c0 == p0 && c1 == p1 {
-        path.push(PathEl::LineTo(p1));
+        PathEl::LineTo(p1)
     } else {
-        path.push(PathEl::CurveTo(c0, c1, p1));
+        PathEl::CurveTo(c0, c1, p1)
     }
 }
