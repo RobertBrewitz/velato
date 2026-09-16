@@ -102,7 +102,7 @@ fn segment(p0: Point, mut c0: Point, p1: Point, mut c1: Point) -> PathEl {
     c0.y += p0.y;
     c1.x += p1.x;
     c1.y += p1.y;
-    if c0 == p0 && c1 == p1 {
+    if (c0.x == p0.x) & (c0.y == p0.y) & (c1.x == p1.x) & (c1.y == p1.y) {
         PathEl::LineTo(p1)
     } else {
         PathEl::CurveTo(c0, c1, p1)
