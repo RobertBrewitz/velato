@@ -59,6 +59,7 @@ pub trait RenderSink {
 pub struct Renderer {
     batch: Batch,
     mask_elements: Vec<PathEl>,
+    draw_path: Vec<PathEl>,
 }
 
 impl Renderer {
@@ -235,7 +236,12 @@ impl Renderer {
             }
             Content::Shape(shapes) => {
                 self.batch.evaluate(shapes, transform, alpha, frame, true);
-                self.batch.render(scene, clip_bounds);
+                self.batch.render(scene, clip_bounds, &mut self.draw_path);
+                self.draw_path.clear();
+                // Exceptional layers must not pin their peak scratch allocation.
+                if self.draw_path.capacity() > 64 * 1024 {
+                    self.draw_path = Vec::new();
+                }
                 self.batch.clear();
             }
         }
@@ -557,11 +563,10 @@ impl Batch {
         self.trim_elements.clear();
     }
 
-    fn render(&self, scene: &mut impl RenderSink, clip_bounds: &Rect) {
+    fn render(&self, scene: &mut impl RenderSink, clip_bounds: &Rect, path: &mut Vec<PathEl>) {
         let mut active_copies: &[CopyLayer] = &[];
         let mut active_draw = None;
         let mut active_repeater_depth = 0;
-        let mut path = Vec::new();
 
         for (draw_index, draw) in self.draws.iter().enumerate().rev() {
             if draw.alpha <= 0.0 || !draw.transform.is_finite() {
@@ -609,7 +614,7 @@ impl Batch {
                 active_copies = copies;
                 active_draw = Some(draw_index);
                 active_repeater_depth = draw.repeater_depth;
-                self.render_draw(draw, style_inverse, geometries, &mut path, scene);
+                self.render_draw(draw, style_inverse, geometries, path, scene);
             }
         }
         for copy in active_copies.iter().rev() {
@@ -633,9 +638,15 @@ impl Batch {
             None
         };
         let brush = modified_brush.as_ref().unwrap_or(&draw.brush);
-        let geometry = &geometries[0];
-        let path = if geometries.len() == 1 && geometry.transform == draw.transform {
-            &self.elements[geometry.elements.clone()]
+        let start = geometries[0].elements.start;
+        let mut end = start;
+        let contiguous = geometries.iter().all(|geometry| {
+            let adjacent = geometry.elements.start == end;
+            end = geometry.elements.end;
+            adjacent && geometry.transform == draw.transform
+        });
+        let path = if contiguous {
+            &self.elements[start..end]
         } else {
             path.clear();
             for geometry in geometries {
