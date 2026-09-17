@@ -26,7 +26,7 @@ pub trait SplineToPath {
             let mut c1: Point = self.get(to_index + 1);
             c1.x += p1.x;
             c1.y += p1.y;
-            if c0 == p0 && c1 == p1 {
+            if (c0.x == p0.x) & (c0.y == p0.y) & (c1.x == p1.x) & (c1.y == p1.y) {
                 path.push(LineTo(p1));
             } else {
                 path.push(CurveTo(c0, c1, p1));
