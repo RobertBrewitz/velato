@@ -100,6 +100,21 @@ impl Renderer {
         Ok(())
     }
 
+    /// Like [`Self::try_append`], but clipped to `clip` (composition coordinates).
+    pub fn try_append_clipped(
+        &mut self,
+        animation: &Composition,
+        frame: f64,
+        transform: Affine,
+        alpha: f64,
+        clip: Rect,
+        scene: &mut impl RenderSink,
+    ) -> Result<(), EvaluationError> {
+        let evaluated = animation.evaluate(frame)?;
+        self.append_evaluated_clipped(&evaluated, transform, alpha, clip, scene);
+        Ok(())
+    }
+
     /// Draws a saved evaluation without recalculating layer hierarchy, timing or transforms.
     ///
     /// Shape and paint properties are still sampled during drawing. To record their evaluated
@@ -114,8 +129,20 @@ impl Renderer {
         scene: &mut impl RenderSink,
     ) {
         let animation = evaluated.composition;
-        self.batch.clear();
         let clip = Rect::new(0.0, 0.0, animation.width as _, animation.height as _);
+        self.append_evaluated_clipped(evaluated, transform, alpha, clip, scene);
+    }
+
+    fn append_evaluated_clipped(
+        &mut self,
+        evaluated: &EvaluatedComposition<'_>,
+        transform: Affine,
+        alpha: f64,
+        clip: Rect,
+        scene: &mut impl RenderSink,
+    ) {
+        let animation = evaluated.composition;
+        self.batch.clear();
         let clip_bounds = transform.transform_rect_bbox(clip);
         scene.push_clip_layer(transform, &clip);
         for (layer_index, layer) in evaluated.layers.iter().enumerate().rev() {
